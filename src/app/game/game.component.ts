@@ -1,5 +1,7 @@
 import { Component, OnInit } from '@angular/core';
 import Phaser from 'phaser';
+import { LogoScene } from '../scenes/logo.scene';
+import { GameScene } from '../scenes/game.scene';
 
 @Component({
   selector: 'app-game',
@@ -16,7 +18,7 @@ export class GameComponent  implements OnInit {
       width: innerWidth,
       height: innerHeight,
       parent: 'game-container',
-      scene: [],
+      scene: [ LogoScene, GameScene/* MainMenuScene, GameScene*/],
       physics: {
         default: 'arcade',
         arcade: {
