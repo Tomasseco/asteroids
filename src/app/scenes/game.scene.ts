@@ -256,6 +256,90 @@ export class GameScene extends Phaser.Scene {
         ctrl_shot.setDepth(3);
         lives.setDepth(3);
 
+        this.stepsPositionX = canvasWidth / 12;
+
+        // Grupo de balas
+        this.bullets = this.physics.add.group();
+
+        // Movimiento a la izquierda
+        ctrl_left.on("pointerdown", () => {
+            this.movingLeft = true;
+        });
+        ctrl_left.on("pointerup", () => {
+            this.movingLeft = false;
+        });
+        ctrl_left.on("pointerout", () => {
+            this.movingLeft = false;
+        });
+
+        // Movimiento a la derecha
+        ctrl_right.on("pointerdown", () => {
+            this.movingRight = true;
+        });
+        ctrl_right.on("pointerup", () => {
+            this.movingRight = false;
+        });
+        ctrl_right.on("pointerout", () => {
+            this.movingRight = false;
+        });
+
+        // Disparo
+        ctrl_shot.on("pointerdown", () => {
+            this.shooting = true;
+        });
+        ctrl_shot.on("pointerup", () => {
+            this.shooting = false;
+        });
+        ctrl_shot.on("pointerout", () => {
+            this.shooting = false;
+        });
+
+        // Eliminar balas que salen de pantalla
+        this.physics.world.on('worldbounds', (body: Phaser.Physics.Arcade.Body) => {
+            body.gameObject.destroy();
+        });
+
+        // Crear grupo de asteroides
+        this.asteroids = this.physics.add.group({
+            bounceX: 1,
+            bounceY: 1,
+            collideWorldBounds: false
+        });
+
+        // Generar asteroides cada cierto tiempo
+        this.time.addEvent({
+            delay: 1000,
+            loop: true,
+            callback: () => {
+                const x = Phaser.Math.Between(0, this.cameras.main.width);
+                const asteroid = this.asteroids.create(x, 0, "asteroid") as Phaser.Physics.Arcade.Image;
+        
+                // Escala aleatoria (tamaño)
+                const scale = Phaser.Math.FloatBetween(0.8, 1.2);
+                asteroid.setScale(scale);
+        
+                // Movimiento
+                asteroid.setVelocity(
+                    Phaser.Math.Between(-50, 50),
+                    Phaser.Math.Between(100, 200)
+                );
+        
+                // Rotación
+                asteroid.setAngularVelocity(Phaser.Math.Between(-100, 100));
+        
+                // Rebote
+                asteroid.setBounce(1);
+                asteroid.setCollideWorldBounds(false);
+            }
+        });
+
+        // Hacer que los asteroides colisionen entre sí
+        this.physics.add.collider(this.asteroids, this.asteroids);
+        this.physics.add.overlap(this.spaceship, this.asteroids, () => {
+            // TODO: Falta manejar las colisiones de asteroide con la nave y restar vidas.
+            console.log("Colisión entre la nave y un asteroide");
+           
+        });
     }
 
     override update(time: number, delta: number) {
