@@ -19,7 +19,7 @@ export class LogoScene extends Phaser.Scene {
     
         this.tweens.add({
         targets: msg_touch_screen,
-        alpha: { from: 1, to: 0.5 },
+        alpha: { from: 1, to: 0.3 },
         duration: 500,
         ease: "Sine.easeInOut",
         yoyo: true,
