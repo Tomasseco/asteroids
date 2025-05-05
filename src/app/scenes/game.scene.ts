@@ -3,17 +3,21 @@ import Phaser from "phaser";
 export class GameScene extends Phaser.Scene {
 
     private spaceship!: Phaser.Physics.Arcade.Image;
+    private bullets!: Phaser.Physics.Arcade.Group;
+    private asteroids!: Phaser.Physics.Arcade.Group;
+
     private stepsPositionX!: number;
     private movingLeft = false;
     private movingRight = false;
     private shooting = false;
     private lastShotTime = 0;
-    private shotCooldown = 400; 
-    private score = 0;    
-    private livesDead = 0; 
-    private bullets!: Phaser.Physics.Arcade.Group;
-    private asteroids!: Phaser.Physics.Arcade.Group;
+    private shotCooldown = 400;
+
+    private score = 0;
+    private livesDead = 0;
     private textScore!: Phaser.GameObjects.BitmapText;
+    private lives!: Phaser.GameObjects.Sprite;
+
     private cursors!: Phaser.Types.Input.Keyboard.CursorKeys;
     private spaceKey!: Phaser.Input.Keyboard.Key;
 
@@ -33,333 +37,176 @@ export class GameScene extends Phaser.Scene {
             frameWidth: 138,
             frameHeight: 56
         });
-       
-        // Vamos a probar texto retro
-        this.load.image('knighthawks', 'assets/fonts/retro/knight3.png');
+        this.load.image("knighthawks", "assets/fonts/retro/knight3.png");
     }
 
     create() {
-        this.cameras.main.setBackgroundColor(0x000000);
-        const background = this.add.image(this.cameras.main.centerX, this.cameras.main.centerY, "background");
-        const canvasWidth = this.cameras.main.width;
-        const canvasHeight = this.cameras.main.height;
-        const scaleX = canvasWidth / background.width;
-        const scaleY = canvasHeight / background.height;
-        background.setScale(Math.max(scaleX, scaleY));
-        background.setScrollFactor(0);
+        const { width, height } = this.cameras.main;
 
-        const ctrl_left = this.add.image(38, canvasHeight - 38, "ctrl_left").setInteractive();
-        const ctrl_right = this.add.image(115, canvasHeight - 38, "ctrl_right").setInteractive();
-        const ctrl_shot = this.add.image(canvasWidth - 40, canvasHeight - 38, "ctrl_shot").setInteractive();
+        // Fondo
+        const background = this.add.image(width / 2, height / 2, "background");
+        background.setScale(Math.max(width / background.width, height / background.height));
+        background.setScrollFactor(0).setDepth(0);
 
-        this.spaceship = this.physics.add.image(this.cameras.main.centerX, canvasHeight - 130, "spaceship");
-        this.spaceship.setCollideWorldBounds(true);
-        this.spaceship.setBounce(0); 
-       
-
-        // Configuración de texto retro
-        const config = {
+        // Fuente bitmap
+        const fontConfig = {
             image: 'knighthawks',
             width: 16,
             height: 18,
             chars: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ| 0123456789*#!@:.,\\?-+=^$£()\'',
             charsPerRow: 19,
-            'spacing.x': 0,
-            'spacing.y': 1,
-            'offset.x': 0,
-            'offset.y': 0,
-            lineSpacing: 5
+            "offset.x": 0,
+            "offset.y": 0,
+            "spacing.x": 0,
+            "spacing.y": 0,
+            lineSpacing: 0
         };
+        this.cache.bitmapFont.add('knighthawks', Phaser.GameObjects.RetroFont.Parse(this, fontConfig));
 
-        this.cache.bitmapFont.add('knighthawks', Phaser.GameObjects.RetroFont.Parse(this, config));
+        this.textScore = this.add.bitmapText(20, 20, 'knighthawks', 'SCORE\n0', 20).setDepth(3);
 
-        this.textScore = this.add.bitmapText(20, 20, 'knighthawks', 'SCORE\n'+this.score, 20);
+        // Nave
+        this.spaceship = this.physics.add.image(width / 2, height - 130, "spaceship");
+        this.spaceship.setCollideWorldBounds(true).setBounce(0).setDepth(2);
 
+        // Vidas
+        this.lives = this.add.sprite(width - 86, 40, "lives", 0).setDepth(3);
 
+        // Controles táctiles
+        const ctrl_left = this.add.image(38, height - 38, "ctrl_left").setInteractive().setDepth(3);
+        const ctrl_right = this.add.image(115, height - 38, "ctrl_right").setInteractive().setDepth(3);
+        const ctrl_shot = this.add.image(width - 40, height - 38, "ctrl_shot").setInteractive().setDepth(3);
+
+        ctrl_left.on("pointerdown", () => this.movingLeft = true);
+        ctrl_left.on("pointerup", () => this.movingLeft = false);
+        ctrl_left.on("pointerout", () => this.movingLeft = false);
+
+        ctrl_right.on("pointerdown", () => this.movingRight = true);
+        ctrl_right.on("pointerup", () => this.movingRight = false);
+        ctrl_right.on("pointerout", () => this.movingRight = false);
+
+        ctrl_shot.on("pointerdown", () => this.shooting = true);
+        ctrl_shot.on("pointerup", () => this.shooting = false);
+        ctrl_shot.on("pointerout", () => this.shooting = false);
+
+        // Controles de teclado
+        if (this.input.keyboard) {
+            this.cursors = this.input.keyboard.createCursorKeys();
+        } else {
+            console.warn("Keyboard input is not available.");
+        }
+        if (this.input.keyboard) {
+            this.spaceKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE);
+        } else {
+            console.warn("Keyboard input is not available.");
+        }
+
+        // Grupo de balas
+        this.bullets = this.physics.add.group();
+
+        // Clase extendida para asteroides
         class Asteroid extends Phaser.Physics.Arcade.Image {
             impactsLeft: number = 5;
         }
 
-         // Crear grupo de asteroides
-         this.asteroids = this.physics.add.group({
-            classType: Asteroid,
-            runChildUpdate: true,
-            bounceX: 1,
-            bounceY: 1,
-            collideWorldBounds: false,
-        });
+        // Grupo de asteroides
+        this.asteroids = this.physics.add.group({ classType: Asteroid, runChildUpdate: true });
 
-        // Generar asteroides cada cierto tiempo
+        // Generación de asteroides
         this.time.addEvent({
             delay: 1000,
             loop: true,
             callback: () => {
-                const x = Phaser.Math.Between(0, this.cameras.main.width);
+                const x = Phaser.Math.Between(0, width);
                 const asteroid = this.asteroids.create(x, -80, "asteroid") as Asteroid;
-                asteroid.impactsLeft= 5; 
-                // Escala aleatoria (tamaño)
+
                 const scale = Phaser.Math.FloatBetween(0.4, 0.8);
                 asteroid.setScale(scale);
-                
-                const baseRadius = 80; 
+                asteroid.impactsLeft = 5;
+
+                const baseRadius = 80;
                 const radius = baseRadius * scale;
-                
                 asteroid.setCircle(
-                  radius,
-                  asteroid.width * scale / 2 - radius,
-                  asteroid.height * scale / 2 - radius
+                    radius,
+                    asteroid.width * scale / 2 - radius,
+                    asteroid.height * scale / 2 - radius
                 );
 
-                // Movimiento
-                asteroid.setVelocity(
-                    Phaser.Math.Between(-40, 40),
-                    Phaser.Math.Between(100, 200)
-                );
-        
-                // Rotación
+                asteroid.setVelocity(Phaser.Math.Between(-40, 40), Phaser.Math.Between(100, 200));
                 asteroid.setAngularVelocity(Phaser.Math.Between(-100, 100));
-        
-                // Rebote
                 asteroid.setBounce(1);
                 asteroid.setCollideWorldBounds(false);
-
-              
+                asteroid.setDepth(1);
             }
         });
 
-        // Hacer que los asteroides colisionen entre sí
+        // Colisiones
         this.physics.add.collider(this.asteroids, this.asteroids);
-        // Colisión entre asteroides y nave
-        this.physics.add.overlap(this.spaceship, this.asteroids, (ship, asteroid) => {
-    
-            this.livesDead++; 
-            lives.setFrame(this.livesDead); 
-            asteroid.destroy(); 
-           
-            
-            // Detener la animación de todos los objetos animados
+
+        this.physics.add.overlap(this.spaceship, this.asteroids, (ship, asteroidObj) => {
+            const asteroid = asteroidObj as Asteroid;
+            this.livesDead++;
+            this.lives.setFrame(this.livesDead);
+            asteroid.destroy();
+
+            this.physics.pause();
             this.anims.pauseAll();
 
-            // También puedes detener tweens activos si los hay
-            this.tweens.killAll();
-            this.physics.pause();
-
-        // 3. Mostrar mensaje
-        const gameOverText = this.add.text(
-            this.cameras.main.centerX,
-            this.cameras.main.centerY,
-            "¡Has sido destruido!",
-            {
+            const msg = this.add.text(width / 2, height / 2, "¡Has sido destruido!", {
                 fontSize: "30px",
                 color: "#ff0000",
                 fontStyle: "bold",
-                backgroundColor: "#00000033",
-                padding: { x: 20, y: 10 },
-                align: "center",
-        
+                backgroundColor: "#00000066",
+                padding: { x: 20, y: 10 }
+            }).setOrigin(0.5).setDepth(10);
+
+            if (this.livesDead > 3) {
+                this.time.delayedCall(2000, () => this.scene.start("GameOverScene"));
+            } else {
+                this.time.delayedCall(5000, () => {
+                    msg.destroy();
+                    this.asteroids.clear(true, true);
+                    this.spaceship.setPosition(width / 2, height - 130);
+                    this.physics.resume();
+                    this.anims.resumeAll();
+                });
             }
-        ).setOrigin(0.5);
-    
-        if (this.livesDead > 3) {
-            this.scene.start("GameOverScene");
-        } else
-        this.time.delayedCall(5000, () => {
-            
-        gameOverText.destroy();
-    
-        // Eliminar todos los asteroides
-        this.asteroids.clear(true, true);
-        // Reanudar físicas y animaciones
-        this.physics.resume();
-        this.anims.resumeAll();
-    
-        // Posicionar la nave nuevamente en el centro
-        this.spaceship.setPosition(this.cameras.main.centerX, this.cameras.main.displayHeight - 130);
-    
-        
-        });
         });
 
-        // Grupo de balas
-        this.bullets = this.physics.add.group();
+        this.physics.add.overlap(this.bullets, this.asteroids, (bullet, asteroidObj) => {
+            const asteroid = asteroidObj as Asteroid;
+            bullet.destroy();
+            asteroid.impactsLeft--;
 
-        this.physics.add.collider(this.bullets, this.asteroids, (bullet, asteroid) => {
-            this.score += 10;
-            bullet.destroy(); 
-            asteroid.destroy(); 
-           this.textScore.setText('SCORE\n'+this.score)
-        });
-
-
-        this.stepsPositionX = canvasWidth / 30;
-
-        // ------------------ Controles Móvil ------------------
-
-        // Movimiento a la izquierda
-        ctrl_left.on("pointerdown", () => {
-            this.movingLeft = true;
-        });
-        ctrl_left.on("pointerup", () => {
-            this.movingLeft = false;
-        });
-        ctrl_left.on("pointerout", () => {
-            this.movingLeft = false;
+            if (asteroid.impactsLeft <= 0) {
+                asteroid.destroy();
+                this.score += 10;
+                this.textScore.setText(`SCORE\n${this.score}`);
+            }
         });
 
-        // Movimiento a la derecha
-        ctrl_right.on("pointerdown", () => {
-            this.movingRight = true;
-        });
-        ctrl_right.on("pointerup", () => {
-            this.movingRight = false;
-        });
-        ctrl_right.on("pointerout", () => {
-            this.movingRight = false;
-        });
-
-        // Disparo
-        ctrl_shot.on("pointerdown", () => {
-            this.shooting = true;
-        });
-        ctrl_shot.on("pointerup", () => {
-            this.shooting = false;
-        });
-        ctrl_shot.on("pointerout", () => {
-            this.shooting = false;
-        });
-
-        // ------------------ Controles PC ------------------
-       
-       
-        if (this.input && this.input.keyboard) {
-            this.cursors = this.input.keyboard.createCursorKeys();
-        }
-    
-       
-        if (this.input && this.input.keyboard) {
-            this.spaceKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE);
-        }
-        
-        // Eliminar objetos que se salen de la pantalla
+        // Eliminar objetos fuera del mundo
         this.physics.world.on('worldbounds', (body: Phaser.Physics.Arcade.Body) => {
             body.gameObject.destroy();
         });
 
-        const lives = this.add.sprite(canvasWidth - 86, 40, "lives", 0);
-        
-        // Profundidad de los objetos
-        background.setDepth(0);
-        this.asteroids.setDepth(1); 
-        this.spaceship.setDepth(2); 
-        ctrl_left.setDepth(3);
-        ctrl_right.setDepth(3);
-        ctrl_shot.setDepth(3);
-        lives.setDepth(3);
-
-        this.stepsPositionX = canvasWidth / 12;
-
-        // Grupo de balas
-        this.bullets = this.physics.add.group();
-
-        // Movimiento a la izquierda
-        ctrl_left.on("pointerdown", () => {
-            this.movingLeft = true;
-        });
-        ctrl_left.on("pointerup", () => {
-            this.movingLeft = false;
-        });
-        ctrl_left.on("pointerout", () => {
-            this.movingLeft = false;
-        });
-
-        // Movimiento a la derecha
-        ctrl_right.on("pointerdown", () => {
-            this.movingRight = true;
-        });
-        ctrl_right.on("pointerup", () => {
-            this.movingRight = false;
-        });
-        ctrl_right.on("pointerout", () => {
-            this.movingRight = false;
-        });
-
-        // Disparo
-        ctrl_shot.on("pointerdown", () => {
-            this.shooting = true;
-        });
-        ctrl_shot.on("pointerup", () => {
-            this.shooting = false;
-        });
-        ctrl_shot.on("pointerout", () => {
-            this.shooting = false;
-        });
-
-        // Eliminar balas que salen de pantalla
-        this.physics.world.on('worldbounds', (body: Phaser.Physics.Arcade.Body) => {
-            body.gameObject.destroy();
-        });
-
-        // Crear grupo de asteroides
-        this.asteroids = this.physics.add.group({
-            bounceX: 1,
-            bounceY: 1,
-            collideWorldBounds: false
-        });
-
-        // Generar asteroides cada cierto tiempo
-        this.time.addEvent({
-            delay: 1000,
-            loop: true,
-            callback: () => {
-                const x = Phaser.Math.Between(0, this.cameras.main.width);
-                const asteroid = this.asteroids.create(x, 0, "asteroid") as Phaser.Physics.Arcade.Image;
-        
-                // Escala aleatoria (tamaño)
-                const scale = Phaser.Math.FloatBetween(0.8, 1.2);
-                asteroid.setScale(scale);
-        
-                // Movimiento
-                asteroid.setVelocity(
-                    Phaser.Math.Between(-50, 50),
-                    Phaser.Math.Between(100, 200)
-                );
-        
-                // Rotación
-                asteroid.setAngularVelocity(Phaser.Math.Between(-100, 100));
-        
-                // Rebote
-                asteroid.setBounce(1);
-                asteroid.setCollideWorldBounds(false);
-            }
-        });
-
-        // Hacer que los asteroides colisionen entre sí
-        this.physics.add.collider(this.asteroids, this.asteroids);
-        this.physics.add.overlap(this.spaceship, this.asteroids, () => {
-            // TODO: Falta manejar las colisiones de asteroide con la nave y restar vidas.
-            console.log("Colisión entre la nave y un asteroide");
-           
-        });
+        this.stepsPositionX = width / 12;
     }
 
-    override update(time: number, delta: number) {
+    override update(time: number) {
         const moveStep = this.stepsPositionX / 5;
 
-        if (this.movingLeft || this.cursors?.left.isDown) {
+        if (this.movingLeft || this.cursors.left.isDown) {
             this.spaceship.x -= moveStep;
-        }
-
-        if (this.movingRight || this.cursors?.right.isDown) {
+        } else if (this.movingRight || this.cursors.right.isDown) {
             this.spaceship.x += moveStep;
         }
 
-        if (this.shooting && time > this.lastShotTime + this.shotCooldown || this.spaceKey?.isDown && time > this.lastShotTime + this.shotCooldown) {
-            const bullet = this.bullets.create(this.spaceship.x, this.spaceship.y-55, "guns") as Phaser.Physics.Arcade.Image;
+        if ((this.shooting || this.spaceKey.isDown) && time > this.lastShotTime + this.shotCooldown) {
+            const bullet = this.bullets.create(this.spaceship.x, this.spaceship.y - 55, "guns") as Phaser.Physics.Arcade.Image;
             bullet.setVelocityY(-400);
             bullet.setCollideWorldBounds(false);
-            
             this.lastShotTime = time;
         }
-        
     }
 }
