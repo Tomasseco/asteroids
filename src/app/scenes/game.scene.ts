@@ -498,12 +498,12 @@ export class GameScene extends Phaser.Scene {
 
     const dist = (speed * delta) / 2000; // px a mover este frame
 
-    if (this.cursors.left.isDown) {
-      this.spaceship.x -= dist;
-    } else if (this.cursors.right.isDown) {
-      this.spaceship.x += dist;
-    }
-
+   // Aquí incluimos tanto los cursores de teclado como tus flags táctiles:
+  if (this.movingLeft || this.cursors.left.isDown) {
+    this.spaceship.x -= dist;
+  } else if (this.movingRight || this.cursors.right.isDown) {
+    this.spaceship.x += dist;
+  }
     if (
       (this.shooting || this.spaceKey.isDown) &&
       time > this.lastShotTime + this.shotCooldown
